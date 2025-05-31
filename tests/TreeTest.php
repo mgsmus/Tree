@@ -17,31 +17,31 @@ class TreeTest extends TestCase
 {
     /**
      * @test
-     * @expectedException \InvalidArgumentException
-     * @expectedExceptionMessage Option “rootid” must be a scalar
      */
     public function anExceptionIsThrownIfANonScalarValueShouldBeUsedAsRootId()
     {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Option “rootid” must be a scalar');
         new Tree([], ['rootId' => []]);
     }
 
     /**
      * @test
-     * @expectedException \InvalidArgumentException
-     * @expectedExceptionMessage Option “id” must be a string
      */
     public function anExceptionIsThrownIfANonStringValueShouldBeUsedAsIdFieldName()
     {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Option “id” must be a string');
         new Tree([], ['id' => 123]);
     }
 
     /**
      * @test
-     * @expectedException \InvalidArgumentException
-     * @expectedExceptionMessage Option “parent” must be a string
      */
     public function anExceptionIsThrownIfANonStringValueShouldBeUsedAsParentIdFieldName()
     {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Option “parent” must be a string');
         new Tree([], ['parent' => new \DateTime()]);
     }
 
@@ -54,7 +54,7 @@ class TreeTest extends TestCase
         $tree = new Tree($data);
 
         $nodes = $tree->getRootNodes();
-        static::assertInternalType('array', $nodes);
+        static::assertIsArray($nodes);
         static::assertCount(5, $nodes);
 
         $expectedOrder = [5, 3, 4, 6, 1];
@@ -74,7 +74,7 @@ class TreeTest extends TestCase
         $tree = new Tree($data, ['rootId' => '']);
 
         $nodes = $tree->getRootNodes();
-        static::assertInternalType('array', $nodes);
+        static::assertIsArray($nodes);
 
         $expectedOrder = ['building', 'vehicle'];
 
@@ -102,11 +102,11 @@ class TreeTest extends TestCase
 
     /**
      * @test
-     * @expectedException \BlueM\Tree\Exception\InvalidDatatypeException
-     * @expectedExceptionMessage Data must be an iterable
      */
     public function anExceptionIsThrownWhenTryingToCreateATreeFromUnusableData()
     {
+        $this->expectException(\BlueM\Tree\Exception\InvalidDatatypeException::class);
+        $this->expectExceptionMessage('Data must be an iterable');
         new Tree('a');
     }
 
@@ -197,7 +197,39 @@ class TreeTest extends TestCase
 
         static::assertCount(\count($data), $tree1JsonDecoded);
         foreach ($data as $nodeData) {
-            static::assertContains($nodeData, $tree1JsonDecoded);
+            // Prepare expected data consistent with Node's property key casing logic
+            $idKey = $tree1->idKey ?? 'id'; // Access protected property via reflection or make them public for test
+            $parentKey = $tree1->parentKey ?? 'parent'; // Or get them from options used for $tree1
+
+            $expectedNodeData = [];
+            foreach ($nodeData as $key => $value) {
+                if ($key === $idKey || $key === $parentKey) {
+                    $expectedNodeData[$key] = $value;
+                } else {
+                    $expectedNodeData[strtolower($key)] = $value;
+                }
+            }
+            // The Node constructor unsets $properties['id'] and $properties['parent']
+            // and then sets $this->properties['id'] and $this->properties['parent']
+            // from its direct $id, $parent arguments.
+            // So, if original $nodeData had 'ID' => 1, it becomes $properties['id'] => 1 (lowercase key)
+            // then it's unset, then $this->properties['id'] = 1 is set.
+            // The custom keys are lowercased. 'id' and 'parent' keys are effectively fixed to 'id', 'parent'.
+            // The test data uses 'id', 'parent' so this is simpler.
+
+            $finalExpectedNodeData = [];
+            $originalIdValue = $nodeData[$idKey];
+            $originalParentValue = $nodeData[$parentKey];
+
+            foreach($nodeData as $k => $v) {
+                if ($k !== $idKey && $k !== $parentKey) {
+                    $finalExpectedNodeData[strtolower($k)] = $v;
+                }
+            }
+            $finalExpectedNodeData[$idKey] = $originalIdValue;
+            $finalExpectedNodeData[$parentKey] = $originalParentValue;
+
+            static::assertContains($finalExpectedNodeData, $tree1JsonDecoded);
         }
 
         $tree2 = new Tree($tree1JsonDecoded);
@@ -215,7 +247,7 @@ class TreeTest extends TestCase
         $tree = new Tree($data);
         $nodes = $tree->getNodes();
 
-        static::assertInternalType('array', $nodes);
+        static::assertIsArray($nodes);
         static::assertCount(\count($data), $nodes);
 
         $expectedOrder = [5, 3, 4, 6, 1, 7, 15, 11, 21, 27, 12, 10, 20];
@@ -235,7 +267,7 @@ class TreeTest extends TestCase
         $tree = new Tree($data, ['rootId' => '']);
 
         $nodes = $tree->getNodes();
-        static::assertInternalType('array', $nodes);
+        static::assertIsArray($nodes);
         static::assertCount(\count($data), $nodes);
 
         $expectedOrder = [
@@ -272,10 +304,12 @@ class TreeTest extends TestCase
 
     /**
      * @test
-     * @expectedException \InvalidArgumentException
      */
     public function tryingToGetANodeByItsIdThrowsAnExceptionIfTheIdIsInvalid()
     {
+        $this->expectException(\InvalidArgumentException::class);
+        // No specific message was in the original annotation for the next line
+        // $this->expectExceptionMessage('...');
         $data = self::dataWithNumericKeys();
         $tree = new Tree($data);
         $tree->getNodeById(999);
@@ -336,11 +370,11 @@ EXPECTED;
 
     /**
      * @test
-     * @expectedException \BlueM\Tree\Exception\InvalidParentException
-     * @expectedExceptionMessage 123 points to non-existent parent with ID 456
      */
     public function anExceptionIsThrownWhenAnInvalidParentIdIsReferenced()
     {
+        $this->expectException(\BlueM\Tree\Exception\InvalidParentException::class);
+        $this->expectExceptionMessage('123 points to non-existent parent with ID 456');
         new Tree(
             [
                 ['id' => 123, 'parent' => 456],
@@ -350,11 +384,11 @@ EXPECTED;
 
     /**
      * @test
-     * @expectedException \BlueM\Tree\Exception\InvalidParentException
-     * @expectedExceptionMessage 678 references its own ID as parent
      */
     public function anExceptionIsThrownWhenANodeWouldBeItsOwnParent()
     {
+        $this->expectException(\BlueM\Tree\Exception\InvalidParentException::class);
+        $this->expectExceptionMessage('678 references its own ID as parent');
         new Tree(
             [
                 ['id' => 123, 'parent' => 0],
@@ -366,11 +400,11 @@ EXPECTED;
     /**
      * @test
      * @ticket                   3
-     * @expectedException \BlueM\Tree\Exception\InvalidParentException
-     * @expectedExceptionMessage references its own ID as parent
      */
     public function anExceptionIsThrownWhenANodeWouldBeItsOwnParentWhenOwnIdAndParentIdHaveDifferentTypes()
     {
+        $this->expectException(\BlueM\Tree\Exception\InvalidParentException::class);
+        $this->expectExceptionMessage('references its own ID as parent');
         new Tree(
             [
                 ['id' => '5', 'parent' => 5],
@@ -400,7 +434,7 @@ EXPECTED;
         $tree = new Tree($data, ['rootId' => '', 'id' => 'id_node', 'parent' => 'id_parent']);
 
         $nodes = $tree->getRootNodes();
-        static::assertInternalType('array', $nodes);
+        static::assertIsArray($nodes);
 
         $expectedOrder = ['building', 'vehicle'];
 
