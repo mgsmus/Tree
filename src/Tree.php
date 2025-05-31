@@ -182,53 +182,101 @@ class Tree implements \JsonSerializable
      * @throws \BlueM\Tree\Exception\InvalidParentException
      * @throws InvalidDatatypeException
      */
-    private function build($data)
-    {
-        if (!\is_array($data) && !($data instanceof \Traversable)) {
-            throw new InvalidDatatypeException('Data must be an iterable (array or implement Traversable)');
+private function build($data)
+{
+    if (!\is_array($data) && !($data instanceof \Traversable)) {
+        throw new InvalidDatatypeException('Data must be an iterable (array or implement Traversable)');
+    }
+
+    $this->nodes = [];
+    // Step 1: Create all node objects from $data and map children to parent IDs.
+    // Children map stores child *node objects*.
+    $children_map = [];
+
+    // Create the root node object.
+    $this->nodes[$this->rootId] = $this->createNode($this->rootId, null, []);
+    // Explicitly set the root node's level. This is the base for all other level calculations.
+    $this->nodes[$this->rootId]->setLevel(0);
+
+    foreach ($data as $row) {
+        if ($row instanceof \Iterator) {
+            $row = iterator_to_array($row);
         }
 
-        $this->nodes = [];
-        $children = [];
+        $nodeId = $row[$this->idKey];
+        $parentId = $row[$this->parentKey];
 
-        // Create the root node
-        $this->nodes[$this->rootId] = $this->createNode($this->rootId, null, []);
+        if ((string) $nodeId === (string) $parentId) {
+            throw new InvalidParentException(
+                "Node with ID $nodeId references its own ID as parent ID"
+            );
+        }
 
-        foreach ($data as $row) {
-            if ($row instanceof \Iterator) {
-                $row = iterator_to_array($row);
-            }
-
-            $this->nodes[$row[$this->idKey]] = $this->createNode(
-                $row[$this->idKey],
-                $row[$this->parentKey],
+        if (!isset($this->nodes[$nodeId])) {
+            $this->nodes[$nodeId] = $this->createNode(
+                $nodeId,
+                $parentId, // Store parentId in properties
                 $row
             );
+        }
+        // Don't set level here for non-root nodes yet.
 
-            if (empty($children[$row[$this->parentKey]])) {
-                $children[$row[$this->parentKey]] = [$row[$this->idKey]];
-            } else {
-                $children[$row[$this->parentKey]][] = $row[$this->idKey];
+        // Map child NODE OBJECTS to their parent ID for BFS processing.
+        if (isset($this->nodes[$parentId])) { // Check if parent exists before mapping
+             $children_map[$parentId][] = $this->nodes[$nodeId];
+        } else {
+            // This check should ideally cover cases where parentId is not the rootId
+            // and also not yet in $this->nodes. This implies an invalid parent or unordered data.
+            // For now, we rely on all valid parents being defined or being the rootId.
+            // A stricter check for non-existent parents (other than root) can be added here or later.
+            if ($parentId !== $this->rootId) {
+                 // This is a temporary placeholder for children whose parents are not yet encountered.
+                 // Or, throw exception if strict parent existence is required before child definition.
+                 $children_map[$parentId][] = $this->nodes[$nodeId];
             }
         }
+    }
 
-        foreach ($children as $pid => $childIds) {
-            foreach ($childIds as $id) {
-                if ((string) $pid === (string) $id) {
-                    throw new InvalidParentException(
-                        "Node with ID $id references its own ID as parent ID"
-                    );
-                }
-                if (isset($this->nodes[$pid])) {
-                    $this->nodes[$pid]->addChild($this->nodes[$id]);
-                } else {
-                    throw new InvalidParentException(
-                        "Node with ID $id points to non-existent parent with ID $pid"
-                    );
+    // Check for nodes pointing to non-existent parents after all nodes are created
+    foreach($this->nodes as $nodeId => $node) {
+        if ($nodeId === $this->rootId) continue; // Skip root node
+        $parentIdInProps = $node->get($this->parentKey); // Assuming Node::get can fetch raw parent ID
+        if ($parentIdInProps !== null && !isset($this->nodes[$parentIdInProps])) {
+            throw new InvalidParentException(
+                "Node with ID $nodeId points to non-existent parent with ID $parentIdInProps"
+            );
+        }
+    }
+
+
+    // Step 2: Build tree structure using BFS to ensure top-down processing for addChild calls.
+    $queue = [$this->nodes[$this->rootId]];
+    // $visited helps in not queuing a node multiple times if it appears in $children_map multiple times (should not happen with current map build)
+    // or if data could represent a graph. For tree, it's mainly for initial queue.
+    $processedForQueue = [$this->rootId => true];
+
+    while (!empty($queue)) {
+        $parentNode = array_shift($queue);
+        $parentActualId = $parentNode->getId();
+
+        if (!empty($children_map[$parentActualId])) {
+            foreach ($children_map[$parentActualId] as $childNode) {
+                // $parentNode->addChild($childNode) will:
+                // 1. Add $childNode to $parentNode->children array.
+                // 2. Set $childNode->parent = $parentNode.
+                // 3. Call $childNode->setLevel($parentNode->getLevel() + 1).
+                // Since $parentNode->getLevel() is guaranteed to be correct due to BFS,
+                // $childNode's level will also be correct.
+                $parentNode->addChild($childNode);
+
+                if (!isset($processedForQueue[$childNode->getId()])) {
+                    $queue[] = $childNode;
+                    $processedForQueue[$childNode->getId()] = true;
                 }
             }
         }
     }
+}
 
     /**
      * Returns a textual representation of the tree.

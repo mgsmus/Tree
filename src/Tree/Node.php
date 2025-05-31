@@ -33,6 +33,11 @@ class Node implements \JsonSerializable
     protected $children = [];
 
     /**
+     * @var int|null The level of this node in the tree. Cached for performance.
+     */
+    protected $level = null;
+
+    /**
      * @param string|int $id
      * @param string|int $parent
      * @param array      $properties Associative array of node properties
@@ -55,6 +60,9 @@ class Node implements \JsonSerializable
         $this->children[] = $child;
         $child->parent = $this;
         $child->properties['parent'] = $this->getId();
+        // $this->getLevel() will either return a stored level or calculate it once.
+        // This ensures the parent's level is determined before setting the child's.
+        $child->setLevel($this->getLevel() + 1);
     }
 
     /**
@@ -242,11 +250,23 @@ class Node implements \JsonSerializable
      */
     public function getLevel(): int
     {
-        if (null === $this->parent) {
-            return 0;
+        if (null === $this->level) {
+            if (null === $this->parent) {
+                // This node is considered a root or detached, level 0.
+                // Note: Tree.php's root node (id 0) will have its level explicitly set to 0.
+                // Children of that root node will be level 1.
+                $this->level = 0;
+            } else {
+                // Fallback for safety, but levels should be set proactively.
+                $this->level = $this->parent->getLevel() + 1;
+            }
         }
+        return $this->level;
+    }
 
-        return $this->parent->getLevel() + 1;
+    public function setLevel(int $level): void
+    {
+        $this->level = $level;
     }
 
     /**
@@ -304,18 +324,22 @@ class Node implements \JsonSerializable
      */
     protected function getDescendantsGeneric(bool $includeSelf): array
     {
-        $descendants = $includeSelf ? [$this] : [];
-        foreach ($this->children as $childnode) {
-            $descendants[] = $childnode;
-            if ($childnode->hasChildren()) {
-                // Note: array_merge() in loop looks bad, but measuring showed it's OK
-                // here, unless maybe really large amounts of data
-                /** @noinspection SlowArrayOperationsInLoopInspection */
-                $descendants = array_merge($descendants, $childnode->getDescendants());
+        $descendants = [];
+        if ($includeSelf) {
+            $descendants[] = $this;
+        }
+        $this->collectDescendants($descendants);
+        return $descendants;
+    }
+
+    private function collectDescendants(array &$descendants): void
+    {
+        foreach ($this->children as $childNode) {
+            $descendants[] = $childNode;
+            if ($childNode->hasChildren()) {
+                $childNode->collectDescendants($descendants);
             }
         }
-
-        return $descendants;
     }
 
     /**
@@ -353,13 +377,30 @@ class Node implements \JsonSerializable
      */
     protected function getAncestorsGeneric(bool $includeSelf): array
     {
-        if (null === $this->parent) {
-            return [];
+        $ancestors = [];
+        if ($includeSelf) {
+            $ancestors[] = $this; // Add self first if requested
         }
+        // Start collecting from the parent
+        if (null !== $this->parent) {
+            // We need to ensure the root node itself (the one with ID $this->rootId in Tree, often 0)
+            // is included if it's an ancestor, as per original behavior.
+            // The collectAncestors method will add $this->parent, and its parent, and so on.
+            // The loop in collectAncestors should naturally stop when $this->parent becomes null.
+            $this->parent->collectAncestors($ancestors);
+        }
+        return $ancestors;
+    }
 
-        $ancestors = $includeSelf ? [$this] : [];
-
-        return array_merge($ancestors, $this->parent->getAncestorsGeneric(true));
+    private function collectAncestors(array &$ancestors): void
+    {
+        $ancestors[] = $this; // Add current node (which is an ancestor)
+        if (null !== $this->parent) {
+            // The check `if (null !== $this->parent)` ensures we don't try to call a method on null.
+            // And it also means the ultimate root node (whose parent IS null) will be added,
+            // but it won't recurse further, effectively stopping the chain.
+            $this->parent->collectAncestors($ancestors);
+        }
     }
 
     /**

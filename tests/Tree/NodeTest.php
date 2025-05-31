@@ -269,13 +269,13 @@ class NodeTest extends TestCase
 
     /**
      * @test
-     * @expectedException \InvalidArgumentException
-     * @expectedExceptionMessage Undefined property: foobar (Node ID: 16)
      */
     public function tryingToGetANonExistentPropertyUsingGetThrowsAnException()
     {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Undefined property: foobar (Node ID: 16)');
         $node = new Node(16, null, ['key' => 'value']);
-        static::assertEquals('value', $node->get('foobar'));
+        $node->get('foobar');
     }
 
     /**
@@ -289,13 +289,13 @@ class NodeTest extends TestCase
 
     /**
      * @test
-     * @expectedException \BadFunctionCallException
-     * @expectedExceptionMessage Invalid method getFoobar()
      */
     public function tryingToGetANonExistentPropertyUsingMagicMethodThrowsAnException()
     {
+        $this->expectException(\BadFunctionCallException::class);
+        $this->expectExceptionMessage('Invalid method getFoobar()');
         $node = new Node(16, null, ['key' => 'value']);
-        static::assertEquals('value', $node->getFoobar());
+        $node->getFoobar();
     }
 
     /**
@@ -342,11 +342,11 @@ class NodeTest extends TestCase
 
     /**
      * @test
-     * @expectedException \RuntimeException
-     * @expectedExceptionMessage Undefined property
      */
     public function anExceptionIsThrownWhenAccessingAnInexistentMagicProperty()
     {
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Undefined property');
         $node = new Node(1, null);
         $node->nosuchproperty;
     }
@@ -442,7 +442,7 @@ class NodeTest extends TestCase
         $parentProperty->setValue($parent, $grandParent);
         $parentProperty->setValue($grandParent, $rootNode);
 
-        static::assertSame([$parent, $grandParent], $node->getAncestors());
+        static::assertSame([$parent, $grandParent, $rootNode], $node->getAncestors());
     }
 
     /**
@@ -462,7 +462,7 @@ class NodeTest extends TestCase
         $parentProperty->setValue($parent, $grandParent);
         $parentProperty->setValue($grandParent, $rootNode);
 
-        static::assertSame([$node, $parent, $grandParent], $node->getAncestorsAndSelf());
+        static::assertSame([$node, $parent, $grandParent, $rootNode], $node->getAncestorsAndSelf());
     }
 
     /**
